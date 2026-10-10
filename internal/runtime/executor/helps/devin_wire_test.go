@@ -159,6 +159,28 @@ func TestSanitizeDevinSystemPrompt_AndSensitiveWords(t *testing.T) {
 	}
 }
 
+func TestSanitizeDevinSystemPrompt_AgentSDKIdentity(t *testing.T) {
+	const identity = "You are a Claude agent, built on Anthropic's Claude Agent SDK."
+	for _, tc := range []struct {
+		name   string
+		prompt string
+		want   string
+	}{
+		{name: "identity only", prompt: identity, want: ""},
+		{name: "webfetch background", prompt: "x-anthropic-billing-header: cc_version=2.1.295; cc_entrypoint=claude-vscode;\n" + identity, want: ""},
+		{name: "preserve task", prompt: identity + "\nSummarize the supplied webpage.", want: "Summarize the supplied webpage."},
+		{name: "whitespace and CRLF", prompt: " \t" + identity + " \r\nSummarize the supplied webpage.\r\n", want: "Summarize the supplied webpage."},
+		{name: "quoted identity", prompt: "Explain this text: " + identity, want: "Explain this text: " + identity},
+		{name: "unrelated SDK mention", prompt: "Document the Claude Agent SDK.", want: "Document the Claude Agent SDK."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SanitizeDevinSystemPrompt(tc.prompt, nil); got != tc.want {
+				t.Fatalf("SanitizeDevinSystemPrompt() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildDevinGetChatMessageRequest_WithImages(t *testing.T) {
 	prompts := []DevinPrompt{
 		{

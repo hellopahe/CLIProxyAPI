@@ -616,7 +616,7 @@ func ParseDevinFrame(payload []byte) (DevinFrameResult, error) {
 	return res, nil
 }
 
-// SanitizeDevinSystemPrompt strips Claude Code attribution and CLI identity headers
+// SanitizeDevinSystemPrompt strips Claude Code attribution and CLI/Agent SDK identity headers
 // (referencing Antigravity conventions), and applies zero-width obfuscation for configured sensitive words.
 func SanitizeDevinSystemPrompt(prompt string, matcher *SensitiveWordMatcher) string {
 	if prompt == "" {
@@ -630,7 +630,7 @@ func SanitizeDevinSystemPrompt(prompt string, matcher *SensitiveWordMatcher) str
 		if util.IsClaudeCodeAttributionSystemText(trimmed) {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "You are Claude Code") {
+		if strings.HasPrefix(trimmed, "You are Claude Code") || trimmed == "You are a Claude agent, built on Anthropic's Claude Agent SDK." {
 			continue
 		}
 		if strings.Contains(trimmed, "authorized security testing") || strings.Contains(trimmed, "destructive techniques, DoS attacks") {
