@@ -103,11 +103,16 @@ func (e *DevinExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 		// Codeium/Devin Connect-RPC upstream expects "Basic <token>-<token>" as its wire authentication header.
 		req.Header.Set("Authorization", "Basic "+apiKey+"-"+apiKey)
 	}
-	req.Header.Set("Content-Type", "application/connect+proto")
+	isWebSearch := req.URL != nil && req.URL.Path == helps.DevinWebSearchPath
+	if isWebSearch {
+		req.Header.Set("Content-Type", "application/proto")
+	} else {
+		req.Header.Set("Content-Type", "application/connect+proto")
+	}
 	req.Header.Set("Connect-Protocol-Version", "1")
 	req.Header.Set("Accept", "*/*")
 	// Native devin-cli attaches Sentry-Trace only to chat streaming, omitting it on unary status/catalog calls.
-	isUnary := req.URL != nil && (strings.Contains(req.URL.Path, "GetUserStatus") || strings.Contains(req.URL.Path, "GetCliModelConfigs") || strings.Contains(req.URL.Path, "SeatManagementService"))
+	isUnary := isWebSearch || req.URL != nil && (strings.Contains(req.URL.Path, "GetUserStatus") || strings.Contains(req.URL.Path, "GetCliModelConfigs") || strings.Contains(req.URL.Path, "SeatManagementService"))
 	if !isUnary && req.Header.Get("Sentry-Trace") == "" {
 		req.Header.Set("Sentry-Trace", helps.GenerateDevinSentryTrace())
 	}
@@ -236,6 +241,12 @@ func (e *DevinExecutor) CountTokens(_ context.Context, _ *cliproxyauth.Auth, req
 
 // Execute performs non-streaming execution against the Devin backend.
 func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
+	if search, errSearch := devinStandaloneWebSearch(req, opts); search != nil || errSearch != nil {
+		if errSearch != nil {
+			return resp, errSearch
+		}
+		return e.executeWebSearch(ctx, auth, req, opts, *search, false)
+	}
 	ctx = helps.EnsureSessionContext(ctx, opts, req.Payload)
 	targetModel := thinking.ParseSuffix(req.Model).ModelName
 
@@ -277,7 +288,7 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		errData, _ := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
 		helps.AppendAPIResponseChunk(ctx, e.cfg, errData)
-		return resp, newDevinStatusError(httpResp.StatusCode, httpResp.Header, errData)
+		return resp, helps.ScopeDevinRequestError(newDevinStatusError(httpResp.StatusCode, httpResp.Header, errData))
 	}
 
 	interactionsJSON, respLog, errConsume := consumeDevinFramesToInteractions(httpResp.Body, req.Model, chatModelUID, helps.ApplyPatchOriginalRequest(req, opts))
@@ -318,6 +329,19 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 
 // ExecuteStream performs streaming execution against the Devin backend.
 func (e *DevinExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
+	if search, errSearch := devinStandaloneWebSearch(req, opts); search != nil || errSearch != nil {
+		if errSearch != nil {
+			return nil, errSearch
+		}
+		resp, errExecute := e.executeWebSearch(ctx, auth, req, opts, *search, true)
+		if errExecute != nil {
+			return nil, errExecute
+		}
+		chunks := make(chan cliproxyexecutor.StreamChunk, 1)
+		chunks <- cliproxyexecutor.StreamChunk{Payload: resp.Payload}
+		close(chunks)
+		return &cliproxyexecutor.StreamResult{Headers: resp.Headers, Chunks: chunks}, nil
+	}
 	ctx = helps.EnsureSessionContext(ctx, opts, req.Payload)
 	targetModel := thinking.ParseSuffix(req.Model).ModelName
 
@@ -356,7 +380,7 @@ func (e *DevinExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		errData, _ := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
 		_ = httpResp.Body.Close()
 		helps.AppendAPIResponseChunk(ctx, e.cfg, errData)
-		return nil, newDevinStatusError(httpResp.StatusCode, httpResp.Header, errData)
+		return nil, helps.ScopeDevinRequestError(newDevinStatusError(httpResp.StatusCode, httpResp.Header, errData))
 	}
 
 	out := make(chan cliproxyexecutor.StreamChunk)
@@ -851,7 +875,7 @@ func (e *DevinExecutor) streamDevinFrames(
 				failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"","code":""}}`), "error.message", errTrailer.Error())
 				failedEvent, _ = sjson.SetBytes(failedEvent, "error.code", fmt.Sprintf("%d", code))
 				_ = emitInteractionsEvent(failedEvent)
-				emitStreamError(statusErr{code: code, msg: errTrailer.Error()})
+				emitStreamError(helps.ScopeDevinRequestError(statusErr{code: code, msg: errTrailer.Error()}))
 				return
 			}
 			sawEOS = true
@@ -1241,7 +1265,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 					Usage:         finalUsage,
 					UnknownFields: unknownFields,
 				}
-				return nil, respLog, statusErr{code: code, msg: errTrailer.Error()}
+				return nil, respLog, helps.ScopeDevinRequestError(statusErr{code: code, msg: errTrailer.Error()})
 			}
 			sawEOS = true
 			break
