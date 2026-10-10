@@ -134,7 +134,7 @@ func TestEmbeddedDevinModelsLoadedOnStartup(t *testing.T) {
 		"devin/deepseek-v4-1-flash",
 		"devin/gemini-3-8-flash",
 		"devin/grok-4-6",
-		"devin/claude-fable-5-1",
+		"claude-fable-5-1",
 		"devin/gpt-6-astra",
 	}
 
@@ -405,8 +405,8 @@ func TestValidateDevinModelsJSON_AggregatesThinkingVariants_Issue6141(t *testing
 	if len(models) != 1 {
 		t.Fatalf("expected 1 aggregated model, got %d: %+v", len(models), models)
 	}
-	if models[0].ID != "devin/claude-opus-5" {
-		t.Errorf("expected ID devin/claude-opus-5, got %q", models[0].ID)
+	if models[0].ID != "claude-opus-5" {
+		t.Errorf("expected ID claude-opus-5, got %q", models[0].ID)
 	}
 	if models[0].Thinking == nil {
 		t.Fatalf("expected Thinking to be populated")

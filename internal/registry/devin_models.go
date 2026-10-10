@@ -57,9 +57,18 @@ func devinBuiltinSWE16SlowModelInfo() *ModelInfo {
 
 // WithDevinBuiltins injects hard-coded Devin model definitions that should
 // not depend on remote or embedded devin_models.json updates. Built-ins replace
-// any matching IDs already present in the provided slice.
+// any matching IDs already present in the provided slice. Claude models use
+// their original public IDs, including when loaded from a legacy fallback.
 func WithDevinBuiltins(models []*ModelInfo) []*ModelInfo {
-	return upsertModelInfos(models, devinBuiltinSWE16SlowModelInfo())
+	out := upsertModelInfos(models, devinBuiltinSWE16SlowModelInfo())
+	for i, model := range out {
+		if model != nil && strings.HasPrefix(model.ID, "devin/claude-") {
+			copy := cloneModelInfo(model)
+			copy.ID = strings.TrimPrefix(model.ID, "devin/")
+			out[i] = copy
+		}
+	}
+	return out
 }
 
 // GetDevinModels returns the active Devin model catalog.
@@ -336,13 +345,18 @@ func aggregateDevinModels(models []*ModelInfo) []*ModelInfo {
 		if baseID == "" {
 			baseID = cleanID
 		}
-		namespacedBase := "devin/" + baseID
+		publicID := "devin/" + baseID
+		// Claude Code's background classifier requests literal Claude IDs, not
+		// the user's main-session alias. Publish the original ID directly.
+		if strings.HasPrefix(baseID, "claude-") {
+			publicID = baseID
+		}
 		isBase := (baseID == cleanID)
 
-		entry, exists := aggregated[namespacedBase]
+		entry, exists := aggregated[publicID]
 		if !exists {
 			clone := *m
-			clone.ID = namespacedBase
+			clone.ID = publicID
 			clone.DisplayName = cleanDevinDisplayName(m.DisplayName)
 			if clone.DisplayName == "" {
 				clone.DisplayName = m.DisplayName
@@ -351,8 +365,8 @@ func aggregateDevinModels(models []*ModelInfo) []*ModelInfo {
 				model:  &clone,
 				levels: make(map[string]struct{}),
 			}
-			aggregated[namespacedBase] = entry
-			order = append(order, namespacedBase)
+			aggregated[publicID] = entry
+			order = append(order, publicID)
 		}
 
 		if isBase {

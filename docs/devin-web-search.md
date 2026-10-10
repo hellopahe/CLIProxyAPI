@@ -23,7 +23,7 @@ standalone tool responses should not be replayed to Anthropic's own Messages API
 
 ```json
 {
-  "model": "devin/claude-haiku-5-5",
+  "model": "claude-haiku-5-5",
   "messages": [{
     "role": "user",
     "content": "Perform a web search for the query: Go release notes"
@@ -91,3 +91,19 @@ go test ./internal/runtime/executor/... ./sdk/cliproxy/auth -count=1
 go test -race ./internal/runtime/executor/... -run 'TestDevin(NativeSearch|PolicyTrailer|WebSearch)' -count=1
 go build -o test-output ./cmd/server
 ```
+
+## Claude model names and auto mode
+
+This fork publishes Devin-hosted `claude-*` models under their original IDs.
+Claude Code's auto-mode classifier can request `claude-sonnet-5` without a
+manual `oauth-model-alias` rule. The same applies to the main-session and helper
+models `claude-sonnet-5-5`, `claude-opus-5-5`, and `claude-haiku-5-5`.
+The bundled catalog includes these models for local-catalog operation.
+
+Only one public Claude name is registered; `devin/claude-*` entries are no longer
+advertised. Update old client model pins to their original names and remove
+manual alias rules whose upstream name is `devin/claude-*`. Other Devin model
+families keep their namespace so `gpt-6-astra` can continue selecting Codex.
+
+This fixes model resolution; it does not auto-approve actions or change the
+classifier's instructions, decisions, or permission rules.

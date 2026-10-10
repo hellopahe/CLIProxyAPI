@@ -307,7 +307,7 @@ func TestGetDevinModelsFallback(t *testing.T) {
 				t.Errorf("devin/swe-2 Type = %q, want devin", m.Type)
 			}
 		}
-		if m != nil && m.ID == "devin/claude-fable-5-1" {
+		if m != nil && m.ID == "claude-fable-5-1" {
 			foundFable = true
 		}
 		if m != nil && m.ID == "devin/gemini-3-8-flash" {
@@ -339,7 +339,7 @@ func TestGetDevinModelsFallback(t *testing.T) {
 		t.Error("expected devin/swe-2 in GetDevinModels()")
 	}
 	if !foundFable {
-		t.Error("expected devin/claude-fable-5-1 in GetDevinModels()")
+		t.Error("expected claude-fable-5-1 in GetDevinModels()")
 	}
 	if !foundGemini38 {
 		t.Error("expected devin/gemini-3-8-flash in GetDevinModels()")
